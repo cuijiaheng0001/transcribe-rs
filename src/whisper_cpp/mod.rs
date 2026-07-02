@@ -236,6 +236,45 @@ impl WhisperEngine {
         })
     }
 
+    /// Load a Whisper model by streaming bytes from a reader.
+    ///
+    /// whisper.cpp consumes the source strictly sequentially in one pass
+    /// (never seeks), so any `std::io::Read` works. Peak memory stays at
+    /// "weights + one chunk" instead of "weights + whole model buffer" —
+    /// the point for decrypt-on-the-fly encrypted assets.
+    pub fn load_from_reader_with_params(
+        reader: &mut dyn std::io::Read,
+        params: WhisperLoadParams,
+    ) -> Result<Self, TranscribeError> {
+        let gpu_device = if !params.use_gpu {
+            0
+        } else if params.gpu_device == GPU_DEVICE_AUTO {
+            auto_select_gpu_device()
+        } else {
+            info!("Using user-selected GPU device {}", params.gpu_device);
+            params.gpu_device
+        };
+
+        let mut context_params = WhisperContextParameters::default();
+        context_params.use_gpu = params.use_gpu;
+        context_params.flash_attn = params.flash_attn;
+        context_params.gpu_device = gpu_device;
+        let context = WhisperContext::new_from_reader_with_params(reader, context_params)
+            .map_err(|e| TranscribeError::Inference(e.to_string()))?;
+
+        let is_multilingual = context.is_multilingual();
+
+        let state = context
+            .create_state()
+            .map_err(|e| TranscribeError::Inference(e.to_string()))?;
+
+        Ok(Self {
+            state,
+            context,
+            is_multilingual,
+        })
+    }
+
     /// Transcribe with model-specific parameters.
     pub fn transcribe_with(
         &mut self,

@@ -276,8 +276,11 @@ optional = true
 version = "3"
 optional = true
 
+# comma fork: adds new_from_reader_with_params (streaming model loader).
+# Baseline = crates.io 0.16.0 verbatim snapshot; rebase before upgrading.
 [dependencies.whisper-rs]
-version = "0.16.0"
+git = "https://github.com/cuijiaheng0001/whisper-rs"
+branch = "comma-reader-load"
 optional = true
 
 [dev-dependencies.once_cell]
