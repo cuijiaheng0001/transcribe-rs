@@ -196,8 +196,14 @@ impl WhisperEngine {
     /// Load a Whisper model from an in-memory buffer (e.g. decrypted assets).
     /// Mirrors [`load_with_params`](Self::load_with_params) but skips the
     /// filesystem entirely via `whisper_init_from_buffer_with_params`.
+    ///
+    /// Takes the buffer by value on purpose: whisper.cpp copies the weights
+    /// into its own (Metal unified-memory) allocation during context init,
+    /// so the plaintext is dead weight afterwards. Dropping it before
+    /// `create_state()` keeps the ~GB buffer from coexisting with the
+    /// KV-cache allocation, trimming peak RSS by that cache's size.
     pub fn load_from_buffer_with_params(
-        buffer: &[u8],
+        buffer: Vec<u8>,
         params: WhisperLoadParams,
     ) -> Result<Self, TranscribeError> {
         let gpu_device = if !params.use_gpu {
@@ -213,8 +219,9 @@ impl WhisperEngine {
         context_params.use_gpu = params.use_gpu;
         context_params.flash_attn = params.flash_attn;
         context_params.gpu_device = gpu_device;
-        let context = WhisperContext::new_from_buffer_with_params(buffer, context_params)
+        let context = WhisperContext::new_from_buffer_with_params(&buffer, context_params)
             .map_err(|e| TranscribeError::Inference(e.to_string()))?;
+        drop(buffer);
 
         let is_multilingual = context.is_multilingual();
 
